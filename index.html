@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pinterest Username Takeover PoC — pidgets + embeds</title>
+  <meta name="robots" content="noindex, nofollow">
+  <!-- Pinterest widgets loader (required for embeds) -->
+  <script async defer src="https://assets.pinterest.com/js/pinit.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --card: #121822;
+      --muted: #9db0c3;
+      --text: #e6edf3;
+      --brand: #e60023;
+      --ok: #19c37d;
+      --warn: #f5a524;
+      --err: #ef4444;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    html, body { 
+      background: var(--bg); 
+      color: var(--text); 
+      font-family: var(--sans);
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    .wrap { 
+      max-width: 1100px; 
+      margin: 32px auto; 
+      padding: 0 16px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    h1 { font-size: 28px; margin: 0 0 6px; }
+    p.subtitle { margin: 0 0 18px; color: var(--muted); }
+    .main-content {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+      flex: 1;
+    }
+    .card { 
+      background: var(--card); 
+      border: 1px solid #1f2937; 
+      border-radius: 16px; 
+      padding: 16px; 
+      box-shadow: 0 8px 18px rgba(0,0,0,0.25); 
+      margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 12px; font-size: 18px; }
+    .row { display:flex; flex-wrap: wrap; gap: 8px; align-items:center }
+    .row > * { margin-right: 8px }
+    code, .mono { font-family: var(--mono); }
+    .kbd { padding: 2px 6px; border:1px solid #334155; border-bottom-width:2px; border-radius:6px; background:#0b1220; font-family:var(--mono); font-size:12px }
+    .btn { cursor:pointer; border:none; background:#192334; color:var(--text); padding:10px 14px; border-radius:12px; font-weight:600 }
+    .btn.primary { background: var(--brand); }
+    .btn.ghost { background: transparent; border:1px solid #243244 }
+    .btn.small { padding:6px 10px; font-size: 12px }
+    .badge { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:12px }
+    .badge.ok { background: #0c2620; color: var(--ok); border:1px solid #134e4a }
+    .badge.warn { background: #261f0c; color: var(--warn); border:1px solid #78350f }
+    .badge.err { background: #2a1414; color: var(--err); border:1px solid #7f1d1d }
+    .banner { padding:12px 14px; border-radius: 12px; margin-bottom: 12px; }
+    .banner.ok { background:#0c2620; border:1px solid #134e4a; color:var(--ok) }
+    .banner.warn { background:#261f0c; border:1px solid #78350f; color:var(--warn) }
+    .banner.err { background:#2a1414; border:1px solid #7f1d1d; color:var(--err) }
+    .kv { display:grid; grid-template-columns: 180px 1fr; gap:6px; margin:8px 0 }
+    .pill { border:1px solid #2b3a4c; background:#0b1220; border-radius:999px; padding:6px 10px; display:inline-flex; gap:6px; align-items:center; }
+    .muted { color: var(--muted) }
+    .pins { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap:10px }
+    .pin { background:#0c1220; border:1px solid #1e293b; border-radius:12px; overflow:hidden }
+    .pin img { width:100%; display:block }
+    .pin .cap { padding:8px; font-size:12px; color:#9fb3c8 }
+    .foot { margin-top:26px; color:var(--muted); font-size:12px }
+    a.inline { color:#93c5fd }
+    .scroll { max-height: 400px; overflow-y: auto; padding-right: 8px; }
+    .sticky-sidebar {
+      position: sticky;
+      top: 20px;
+      height: fit-content;
+      max-height: calc(100vh - 100px);
+      overflow-y: auto;
+    }
+    .api-section {
+      grid-column: span 12;
+      margin-top: 16px;
+    }
+    .json-output {
+      background:#0b1220; 
+      border:1px solid #1e293b; 
+      border-radius:12px; 
+      padding:12px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Pinterest Username Takeover PoC</h1>
+    <p class="subtitle">GitHub Pages, no server. Demonstrates <em>pidgets</em> JSON + official <em>embeds</em> and a drift detector when a freed username is re-claimed by an attacker/test user.</p>
+
+    <div class="main-content">
+      <!-- Left column: controls & status -->
+      <div class="card sticky-sidebar" style="grid-column: span 5">
+        <h2>1) Configuration</h2>
+        <div class="kv"><div>OLD username (public):</div><div><span id="oldUser" class="pill"></span></div></div>
+        <div class="kv"><div>NEW username (renamed):</div><div><span id="newUser" class="pill"></span></div></div>
+        <div class="kv"><div>Board slug:</div><div><span id="boardSlug" class="pill"></span></div></div>
+        <div class="kv"><div>Section slug:</div><div><span id="sectionSlug" class="pill"></span></div></div>
+        <p class="muted">Override via query params: <span class="kbd">?user=&lt;old&gt;&amp;new=&lt;new&gt;&amp;board=&lt;board&gt;&amp;section=&lt;section&gt;</span></p>
+
+        <h2>2) Detector</h2>
+        <div id="detectorBanner" class="banner ok">Baseline exists. Click "Check now" to validate current resolution.</div>
+        <div class="row" style="margin-bottom: 8px">
+          <button id="btnBaseline" class="btn ghost">Capture baseline from OLD</button>
+          <button id="btnCheck" class="btn">Check now</button>
+          <button id="btnClear" class="btn small ghost">Clear baseline</button>
+        </div>
+        <div class="kv"><div>Baseline user.id:</div><div class="mono" id="baselineOut">620793267294033314</div></div>
+        <div class="kv"><div>Current resolved user.id:</div><div class="mono" id="currentOut">—</div></div>
+
+        <h2>3) Target switch</h2>
+        <div class="row">
+          <button id="btnUseOld" class="btn primary">Use OLD username</button>
+          <button id="btnUseNew" class="btn ghost">Use NEW username</button>
+        </div>
+        <p class="muted">Switch which identity the <strong>embeds</strong> and <strong>live fetch</strong> target. Use this to simulate a takeover after the original account is renamed.</p>
+      </div>
+
+      <!-- Right column: embeds & data -->
+      <div class="card" style="grid-column: span 7">
+        <h2>Embeds (rendered by Pinterest script)</h2>
+        <div id="embeds">
+          <h3 style="margin:8px 0">Follow button</h3>
+          <div id="followMount"></div>
+          <h3 style="margin:8px 0">User embed</h3>
+          <div id="userMount"></div>
+          <h3 style="margin:8px 0">Board embed</h3>
+          <div id="boardMount"></div>
+        </div>
+      </div>
+
+      <!-- Bottom section: APIs -->
+      <div class="card api-section">
+        <h2>Pidgets JSON (read-only) — live renders</h2>
+        <div class="row" style="margin-bottom: 6px">
+          <button id="btnFetchUserPins" class="btn small">Fetch <span class="mono">/v3/pidgets/users/{user}/pins/</span></button>
+          <button id="btnFetchBoardPins" class="btn small">Fetch <span class="mono">/v3/pidgets/boards/{user}/{board}/pins/</span></button>
+          <button id="btnFetchSectionPins" class="btn small">Fetch <span class="mono">/v3/pidgets/sections/{user}/{board}/{section}/pins/</span></button>
+        </div>
+        <div class="row">
+          <span id="apiStatus" class="badge warn">Idle</span>
+        </div>
+        <div class="grid" style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <h3>Pins grid</h3>
+            <div id="pins" class="pins"></div>
+          </div>
+          <div>
+            <h3>Last JSON (truncated)</h3>
+            <pre id="jsonOut" class="json-output">{
+  "status": "success",
+  "code": 0,
+  "message": "dai_~",
+  "endpoint_name": "v3_pidget_get_board_section_pins",
+  "data": {
+    "section": {
+      "id": "5447171508724100692",
+      "title": "pickmese"
+    },
+    "board": {
+      "name": "pickme",
+      "follower_count": 0,
+      "description": "",
+      "image_thumbnail_url": "https://i.pining.com/upload/620793198576042125_board_thu08-17-00-00-40_70551_60.jpg",
+      "url": "/victim_in_pinterest/pickme/",
+      "id": "620793198576042125",
+      "pin_count": 7
+    },
+    "user": {
+      "follower_count": 0
+    }
+  }
+}</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <strong>How the detector works:</strong> We capture the stable <span class="mono">user.id</span> from the OLD username via pidgets. Later, if the same username resolves to a different <span class="mono">user.id</span> (e.g., the original owner renamed to <span class="mono">victim_in_pinterest_new</span> and someone re-claimed the old handle), the banner turns red.
+    </div>
+  </div>
+
+  <script>
+    // --- Config ---
+    const DEFAULTS = {
+      oldUser: 'mohammedashraf0i',
+      newUser: 'mohammedashraf0ii',
+      board: 'board arc',
+      section: 'h1',
+    };
+
+    const qs = new URLSearchParams(location.search);
+    const CFG = {
+      oldUser: qs.get('user') || DEFAULTS.oldUser,
+      newUser: qs.get('new') || DEFAULTS.newUser,
+      board: qs.get('board') || DEFAULTS.board,
+      section: qs.get('section') || DEFAULTS.section,
+    };
+
+    let currentTarget = 'old'; // 'old' or 'new'
+
+    // --- DOM helpers ---
+    const $ = (id) => document.getElementById(id);
+    const set = (id, html) => ($(id).innerHTML = html);
+
+    function pill(value) { return `<span class="mono">${value}</span>`; }
+
+    function setBanner(kind, html) {
+      const el = $('detectorBanner');
+      el.className = `banner ${kind}`;
+      el.innerHTML = html;
+    }
+
+    function setApiStatus(kind, text) {
+      const el = $('apiStatus');
+      el.className = `badge ${kind}`;
+      el.textContent = text;
+    }
+
+    // --- Embeds ---
+    function renderEmbeds() {
+      const user = currentTarget === 'old' ? CFG.oldUser : CFG.newUser;
+      const boardHref = `https://www.pinterest.com/${user}/${CFG.board}/`;
+      const userHref = `https://www.pinterest.com/${user}/`;
+
+      $('followMount').innerHTML = `
+        <a href="${userHref}" data-pin-do="buttonFollow">Follow ${user}</a>
+      `;
+      $('userMount').innerHTML = `
+        <a href="${userHref}"
+           data-pin-do="embedUser"
+           data-pin-board-width="400"
+           data-pin-scale-height="320"
+           data-pin-scale-width="80"></a>
+      `;
+      $('boardMount').innerHTML = `
+        <a data-pin-do="embedBoard"
+           data-pin-board-width="400"
+           data-pin-scale-height="240"
+           data-pin-scale-width="80"
+           href="${boardHref}"></a>
+      `;
+
+      if (window.PinUtils && typeof window.PinUtils.build === 'function') {
+        window.PinUtils.build();
+      }
+    }
+
+    // --- Pidgets ---
+    async function fetchJSON(url) {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    }
+
+    function truncate(obj, len = 1600) {
+      const s = JSON.stringify(obj, null, 2);
+      return s.length > len ? s.slice(0, len) + '\n… (truncated)' : s;
+    }
+
+    function renderPins(pins) {
+      const html = pins.map(p => {
+        const img = p?.images?.['236x']?.url || p?.images?.['237x']?.url || p?.images?.['564x']?.url;
+        return img ? `<div class="pin"><img loading="lazy" src="${img}" alt="pin"/><div class="cap">${(p.description||'').trim() || '&nbsp;'}</div></div>` : '';
+      }).join('');
+      $('pins').innerHTML = html || '<div class="muted">No pins found.</div>';
+    }
+
+    async function getUserPins(username) {
+      const url = `https://api.pinterest.com/v3/pidgets/users/${encodeURIComponent(username)}/pins/`;
+      setApiStatus('warn', `Fetching users/${username}/pins…`);
+      const json = await fetchJSON(url);
+      setApiStatus('ok', 'OK');
+      return json;
+    }
+
+    async function getBoardPins(username, board) {
+      const url = `https://api.pinterest.com/v3/pidgets/boards/${encodeURIComponent(username)}/${encodeURIComponent(board)}/pins/`;
+      setApiStatus('warn', `Fetching boards/${username}/${board}/pins…`);
+      const json = await fetchJSON(url);
+      setApiStatus('ok', 'OK');
+      return json;
+    }
+
+    async function getSectionPins(username, board, section) {
+      const url = `https://api.pinterest.com/v3/pidgets/sections/${encodeURIComponent(username)}/${encodeURIComponent(board)}/${encodeURIComponent(section)}/pins/`;
+      setApiStatus('warn', `Fetching sections/${username}/${board}/${section}/pins…`);
+      const json = await fetchJSON(url);
+      setApiStatus('ok', 'OK');
+      return json;
+    }
+
+    // --- Drift detector (baseline in localStorage) ---
+    const LS_KEY = 'poc_pinterest_baseline_user_id';
+
+    function readBaseline() { return localStorage.getItem(LS_KEY); }
+    function writeBaseline(id) { localStorage.setItem(LS_KEY, id); }
+    function clearBaseline() { localStorage.removeItem(LS_KEY); }
+
+    async function captureBaseline() {
+      try {
+        const j = await getUserPins(CFG.oldUser);
+        const id = j?.data?.user?.id;
+        if (!id) throw new Error('No user.id in pidgets response');
+        writeBaseline(id);
+        $('baselineOut').textContent = id;
+        setBanner('ok', `Baseline captured from OLD (<span class="mono">${CFG.oldUser}</span>) → <span class="mono">${id}</span>`);
+        $('currentOut').textContent = '—';
+      } catch (e) {
+        setBanner('err', `Baseline capture failed: ${e.message}`);
+      }
+    }
+
+    async function checkDrift() {
+      const baseline = readBaseline();
+      if (!baseline) {
+        setBanner('warn', 'No baseline set. Capture baseline first.');
+        return;
+      }
+      try {
+        const j = await getUserPins(CFG.oldUser);
+        const id = j?.data?.user?.id || 'n/a';
+        $('currentOut').textContent = id;
+        $('baselineOut').textContent = baseline;
+        if (id === baseline) {
+          setBanner('ok', `No drift detected. OLD username resolves to the same <span class="mono">user.id=${id}</span>.`);
+        } else {
+          setBanner('err', `⚠️ DRIFT DETECTED: OLD username now resolves to <span class="mono">user.id=${id}</span> (expected <span class="mono">${baseline}</span>). Likely username re-claim.`);
+        }
+      } catch (e) {
+        setBanner('err', `Check failed: ${e.message}`);
+      }
+    }
+
+    // --- Wire UI ---
+    function refreshLabels() {
+      set('oldUser', pill(CFG.oldUser));
+      set('newUser', pill(CFG.newUser));
+      set('boardSlug', pill(CFG.board));
+      set('sectionSlug', pill(CFG.section));
+    }
+
+    function useOld() { currentTarget = 'old'; renderEmbeds(); }
+    function useNew() { currentTarget = 'new'; renderEmbeds(); }
+
+    $('btnUseOld').addEventListener('click', useOld);
+    $('btnUseNew').addEventListener('click', useNew);
+
+    $('btnBaseline').addEventListener('click', captureBaseline);
+    $('btnCheck').addEventListener('click', checkDrift);
+    $('btnClear').addEventListener('click', () => { clearBaseline(); setBanner('warn', 'Baseline cleared. Capture again to enable detection.'); $('baselineOut').textContent = '—'; $('currentOut').textContent = '—';});
+
+    $('btnFetchUserPins').addEventListener('click', async () => {
+      const uname = currentTarget === 'old' ? CFG.oldUser : CFG.newUser;
+      try { const j = await getUserPins(uname); renderPins(j?.data?.pins||[]); set('jsonOut', truncate(j)); }
+      catch (e) { setApiStatus('err', 'Error'); set('jsonOut', e.message); }
+    });
+
+    $('btnFetchBoardPins').addEventListener('click', async () => {
+      const uname = currentTarget === 'old' ? CFG.oldUser : CFG.newUser;
+      try { const j = await getBoardPins(uname, CFG.board); renderPins(j?.data?.pins||[]); set('jsonOut', truncate(j)); }
+      catch (e) { setApiStatus('err', 'Error'); set('jsonOut', e.message); }
+    });
+
+    $('btnFetchSectionPins').addEventListener('click', async () => {
+      const uname = currentTarget === 'old' ? CFG.oldUser : CFG.newUser;
+      try { const j = await getSectionPins(uname, CFG.board, CFG.section); renderPins(j?.data?.pins||[]); set('jsonOut', truncate(j)); }
+      catch (e) { setApiStatus('err', 'Error'); set('jsonOut', e.message); }
+    });
+
+    // init
+    refreshLabels();
+    renderEmbeds();
+    if (readBaseline()) {
+      $('baselineOut').textContent = readBaseline();
+      setBanner('ok', 'Baseline exists. Click "Check now" to validate current resolution.');
+    }
+  </script>
+</body>
+</html>
