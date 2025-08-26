@@ -109,28 +109,23 @@
       <!-- Left column: controls & status -->
       <div class="card sticky-sidebar" style="grid-column: span 5">
         <h2>1) Configuration</h2>
-        <div class="kv"><div>OLD username (public):</div><div><span id="oldUser" class="pill"></span></div></div>
-        <div class="kv"><div>NEW username (renamed):</div><div><span id="newUser" class="pill"></span></div></div>
+        <div class="kv"><div>Target username:</div><div><span id="targetUser" class="pill"></span></div></div>
         <div class="kv"><div>Board slug:</div><div><span id="boardSlug" class="pill"></span></div></div>
         <div class="kv"><div>Section slug:</div><div><span id="sectionSlug" class="pill"></span></div></div>
-        <p class="muted">Override via query params: <span class="kbd">?user=&lt;old&gt;&amp;new=&lt;new&gt;&amp;board=&lt;board&gt;&amp;section=&lt;section&gt;</span></p>
+        <p class="muted">Override via query params: <span class="kbd">?user=&lt;username&gt;&amp;board=&lt;board&gt;&amp;section=&lt;section&gt;</span></p>
 
-        <h2>2) Detector</h2>
+        <h2>2) Drift Detector</h2>
         <div id="detectorBanner" class="banner ok">Baseline exists. Click "Check now" to validate current resolution.</div>
         <div class="row" style="margin-bottom: 8px">
-          <button id="btnBaseline" class="btn ghost">Capture baseline from OLD</button>
+          <button id="btnBaseline" class="btn ghost">Capture baseline</button>
           <button id="btnCheck" class="btn">Check now</button>
           <button id="btnClear" class="btn small ghost">Clear baseline</button>
         </div>
         <div class="kv"><div>Baseline user.id:</div><div class="mono" id="baselineOut">620793267294033314</div></div>
         <div class="kv"><div>Current resolved user.id:</div><div class="mono" id="currentOut">—</div></div>
 
-        <h2>3) Target switch</h2>
-        <div class="row">
-          <button id="btnUseOld" class="btn primary">Use OLD username</button>
-          <button id="btnUseNew" class="btn ghost">Use NEW username</button>
-        </div>
-        <p class="muted">Switch which identity the <strong>embeds</strong> and <strong>live fetch</strong> target. Use this to simulate a takeover after the original account is renamed.</p>
+        <h2>3) How it works</h2>
+        <p class="muted">We capture the stable <span class="mono">user.id</span> from the username via pidgets. Later, if the same username resolves to a different <span class="mono">user.id</span> (e.g., the original owner renamed and someone re-claimed the handle), the banner turns red.</p>
       </div>
 
       <!-- Right column: embeds & data -->
@@ -172,14 +167,14 @@
   "data": {
     "section": {
       "id": "5447171508724100692",
-      "title": "pickmese"
+      "title": "h1"
     },
     "board": {
-      "name": "pickme",
+      "name": "board arc",
       "follower_count": 0,
       "description": "",
       "image_thumbnail_url": "https://i.pining.com/upload/620793198576042125_board_thu08-17-00-00-40_70551_60.jpg",
-      "url": "/victim_in_pinterest/pickme/",
+      "url": "/mohammedashraf0ii/board arc/",
       "id": "620793198576042125",
       "pin_count": 7
     },
@@ -194,28 +189,24 @@
     </div>
 
     <div class="foot">
-      <strong>How the detector works:</strong> We capture the stable <span class="mono">user.id</span> from the OLD username via pidgets. Later, if the same username resolves to a different <span class="mono">user.id</span> (e.g., the original owner renamed to <span class="mono">victim_in_pinterest_new</span> and someone re-claimed the old handle), the banner turns red.
+      <strong>How the detector works:</strong> We capture the stable <span class="mono">user.id</span> from the username via pidgets. Later, if the same username resolves to a different <span class="mono">user.id</span> (e.g., the original owner renamed and someone re-claimed the handle), the banner turns red.
     </div>
   </div>
 
   <script>
     // --- Config ---
     const DEFAULTS = {
-      oldUser: 'mohammedashraf0ii',
-      newUser: 'mohammedashraf0ii',
+      targetUser: 'mohammedashraf0ii',
       board: 'board arc',
       section: 'h1',
     };
 
     const qs = new URLSearchParams(location.search);
     const CFG = {
-      oldUser: qs.get('user') || DEFAULTS.oldUser,
-      newUser: qs.get('new') || DEFAULTS.newUser,
+      targetUser: qs.get('user') || DEFAULTS.targetUser,
       board: qs.get('board') || DEFAULTS.board,
       section: qs.get('section') || DEFAULTS.section,
     };
-
-    let currentTarget = 'old'; // 'old' or 'new'
 
     // --- DOM helpers ---
     const $ = (id) => document.getElementById(id);
@@ -237,12 +228,11 @@
 
     // --- Embeds ---
     function renderEmbeds() {
-      const user = currentTarget === 'old' ? CFG.oldUser : CFG.newUser;
-      const boardHref = `https://www.pinterest.com/${user}/${CFG.board}/`;
-      const userHref = `https://www.pinterest.com/${user}/`;
+      const userHref = `https://www.pinterest.com/${CFG.targetUser}/`;
+      const boardHref = `https://www.pinterest.com/${CFG.targetUser}/${CFG.board}/`;
 
       $('followMount').innerHTML = `
-        <a href="${userHref}" data-pin-do="buttonFollow">Follow ${user}</a>
+        <a href="${userHref}" data-pin-do="buttonFollow">Follow ${CFG.targetUser}</a>
       `;
       $('userMount').innerHTML = `
         <a href="${userHref}"
@@ -317,12 +307,12 @@
 
     async function captureBaseline() {
       try {
-        const j = await getUserPins(CFG.oldUser);
+        const j = await getUserPins(CFG.targetUser);
         const id = j?.data?.user?.id;
         if (!id) throw new Error('No user.id in pidgets response');
         writeBaseline(id);
         $('baselineOut').textContent = id;
-        setBanner('ok', `Baseline captured from OLD (<span class="mono">${CFG.oldUser}</span>) → <span class="mono">${id}</span>`);
+        setBanner('ok', `Baseline captured (<span class="mono">${CFG.targetUser}</span>) → <span class="mono">${id}</span>`);
         $('currentOut').textContent = '—';
       } catch (e) {
         setBanner('err', `Baseline capture failed: ${e.message}`);
@@ -336,14 +326,14 @@
         return;
       }
       try {
-        const j = await getUserPins(CFG.oldUser);
+        const j = await getUserPins(CFG.targetUser);
         const id = j?.data?.user?.id || 'n/a';
         $('currentOut').textContent = id;
         $('baselineOut').textContent = baseline;
         if (id === baseline) {
-          setBanner('ok', `No drift detected. OLD username resolves to the same <span class="mono">user.id=${id}</span>.`);
+          setBanner('ok', `No drift detected. Username resolves to the same <span class="mono">user.id=${id}</span>.`);
         } else {
-          setBanner('err', `⚠️ DRIFT DETECTED: OLD username now resolves to <span class="mono">user.id=${id}</span> (expected <span class="mono">${baseline}</span>). Likely username re-claim.`);
+          setBanner('err', `⚠️ DRIFT DETECTED: Username now resolves to <span class="mono">user.id=${id}</span> (expected <span class="mono">${baseline}</span>). Likely username re-claim.`);
         }
       } catch (e) {
         setBanner('err', `Check failed: ${e.message}`);
@@ -352,37 +342,27 @@
 
     // --- Wire UI ---
     function refreshLabels() {
-      set('oldUser', pill(CFG.oldUser));
-      set('newUser', pill(CFG.newUser));
+      set('targetUser', pill(CFG.targetUser));
       set('boardSlug', pill(CFG.board));
       set('sectionSlug', pill(CFG.section));
     }
-
-    function useOld() { currentTarget = 'old'; renderEmbeds(); }
-    function useNew() { currentTarget = 'new'; renderEmbeds(); }
-
-    $('btnUseOld').addEventListener('click', useOld);
-    $('btnUseNew').addEventListener('click', useNew);
 
     $('btnBaseline').addEventListener('click', captureBaseline);
     $('btnCheck').addEventListener('click', checkDrift);
     $('btnClear').addEventListener('click', () => { clearBaseline(); setBanner('warn', 'Baseline cleared. Capture again to enable detection.'); $('baselineOut').textContent = '—'; $('currentOut').textContent = '—';});
 
     $('btnFetchUserPins').addEventListener('click', async () => {
-      const uname = currentTarget === 'old' ? CFG.oldUser : CFG.newUser;
-      try { const j = await getUserPins(uname); renderPins(j?.data?.pins||[]); set('jsonOut', truncate(j)); }
+      try { const j = await getUserPins(CFG.targetUser); renderPins(j?.data?.pins||[]); set('jsonOut', truncate(j)); }
       catch (e) { setApiStatus('err', 'Error'); set('jsonOut', e.message); }
     });
 
     $('btnFetchBoardPins').addEventListener('click', async () => {
-      const uname = currentTarget === 'old' ? CFG.oldUser : CFG.newUser;
-      try { const j = await getBoardPins(uname, CFG.board); renderPins(j?.data?.pins||[]); set('jsonOut', truncate(j)); }
+      try { const j = await getBoardPins(CFG.targetUser, CFG.board); renderPins(j?.data?.pins||[]); set('jsonOut', truncate(j)); }
       catch (e) { setApiStatus('err', 'Error'); set('jsonOut', e.message); }
     });
 
     $('btnFetchSectionPins').addEventListener('click', async () => {
-      const uname = currentTarget === 'old' ? CFG.oldUser : CFG.newUser;
-      try { const j = await getSectionPins(uname, CFG.board, CFG.section); renderPins(j?.data?.pins||[]); set('jsonOut', truncate(j)); }
+      try { const j = await getSectionPins(CFG.targetUser, CFG.board, CFG.section); renderPins(j?.data?.pins||[]); set('jsonOut', truncate(j)); }
       catch (e) { setApiStatus('err', 'Error'); set('jsonOut', e.message); }
     });
 
